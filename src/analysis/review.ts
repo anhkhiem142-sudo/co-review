@@ -47,6 +47,8 @@ export interface GameReview {
   whiteWinPcts: number[];
   accuracy: GameAccuracy;
   opening?: Opening;
+  /** Điểm thô của engine cho N+1 thế cờ (có biến chính — dùng để diễn lại "nếu đi chuẩn thì sao") */
+  positions: PositionEval[];
 }
 
 const toWhite = (score: EngineScore, fen: string): EngineScore =>
@@ -191,5 +193,6 @@ export function buildReview(game: ParsedGame, positions: PositionEval[], eco?: E
       cfg,
     ),
     opening,
+    positions,
   };
 }

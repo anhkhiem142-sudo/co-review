@@ -1,16 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { explainLine } from '../../analysis/lineExplain';
 import { ERROR_CLASSES } from '../../analysis/types';
+import { negateScore } from '../../analysis/winProb';
+import type { EngineScore } from '../../engine/stockfishClient';
 import type { ParsedGame } from '../../game/parseGame';
 import { useGameAnalysis } from '../../hooks/useGameAnalysis';
 import { useKeyboardNav } from '../../hooks/useKeyboardNav';
 import type { DepthPreset } from '../../storage/prefs';
+import { formatEval, moveNumber } from '../classMeta';
 import DepthPicker from '../DepthPicker';
 import BoardPanel, { type BoardArrow, type PlayerBarInfo } from './BoardPanel';
 import EvalChart from './EvalChart';
-import MoveExplain from './MoveExplain';
+import LineViewer, { type ActiveLine } from './LineViewer';
+import MoveExplain, { type LineKind } from './MoveExplain';
 import MoveList from './MoveList';
 import NavControls from './NavControls';
 import SummaryPanel from './SummaryPanel';
+
+const toWhite = (s: EngineScore, sideToMove: 'w' | 'b') => (sideToMove === 'w' ? s : negateScore(s));
 
 export default function ReviewPage({
   game,
@@ -28,32 +35,97 @@ export default function ReviewPage({
   const [pos, setPos] = useState(0);
   const [hint, setHint] = useState(false);
   const [flipped, setFlipped] = useState(false);
+  /** Biến đang diễn lại (null = đang xem ván thật) */
+  const [line, setLine] = useState<ActiveLine | null>(null);
   const { state, reanalyze } = useGameAnalysis(game, depth);
   const review = state.status === 'done' ? state.review : undefined;
   const max = game.moves.length;
 
-  useEffect(() => setPos(0), [game]);
+  useEffect(() => {
+    setPos(0);
+    setLine(null);
+  }, [game]);
 
-  const select = useCallback((p: number) => setPos(Math.max(0, Math.min(max, p))), [max]);
-  const nav = useMemo(
-    () => ({
-      prev: () => setPos((p) => Math.max(0, p - 1)),
-      next: () => setPos((p) => Math.min(max, p + 1)),
-      first: () => setPos(0),
-      last: () => setPos(max),
-    }),
+  const select = useCallback(
+    (p: number) => {
+      setLine(null);
+      setPos(Math.max(0, Math.min(max, p)));
+    },
     [max],
+  );
+
+  const stepLine = useCallback(
+    (n: number) => setLine((l) => (l ? { ...l, step: Math.max(0, Math.min(l.exp.steps.length, n)) } : l)),
+    [],
+  );
+
+  const inLine = line != null;
+  const nav = useMemo(
+    () =>
+      inLine
+        ? {
+            prev: () => setLine((l) => (l ? { ...l, step: Math.max(0, l.step - 1) } : l)),
+            next: () => setLine((l) => (l ? { ...l, step: Math.min(l.exp.steps.length, l.step + 1) } : l)),
+            first: () => setLine((l) => (l ? { ...l, step: 0 } : l)),
+            last: () => setLine((l) => (l ? { ...l, step: l.exp.steps.length } : l)),
+          }
+        : {
+            prev: () => setPos((p) => Math.max(0, p - 1)),
+            next: () => setPos((p) => Math.min(max, p + 1)),
+            first: () => setPos(0),
+            last: () => setPos(max),
+          },
+    [max, inLine],
   );
   useKeyboardNav(nav);
 
-  const fen = pos === 0 ? game.startFen : game.moves[pos - 1].fenAfter;
   const raw = game.moves[pos - 1];
   const move = review?.moves[pos - 1];
   const nextMove = review?.moves[pos];
   const orientation: 'white' | 'black' = (myColor === 'w') !== flipped ? 'white' : 'black';
 
+  /** Mở chế độ diễn lại biến: sau nước đã đi, hoặc nếu đi nước tốt nhất */
+  const showLine = (kind: LineKind) => {
+    if (!review || !move) return;
+    const before = review.positions[pos - 1]?.lines[0];
+    const after = review.positions[pos]?.lines[0];
+    const opp = move.color === 'w' ? 'b' : 'w';
+    if (kind === 'played') {
+      const exp = explainLine(move.fenBefore, [move.uci, ...(after?.pv ?? [])], myColor, 11);
+      setLine({
+        kind,
+        title: `Diễn biến sau ${moveNumber(move.ply)} ${move.san}`,
+        exp,
+        engineEval: formatEval(after ? toWhite(after.score, opp) : move.evalAfter),
+        step: 1,
+      });
+    } else {
+      const exp = explainLine(move.fenBefore, before?.pv ?? [], myColor, 10);
+      setLine({
+        kind,
+        title: `Nếu đi ${move.bestSan} thay vì ${move.san}`,
+        exp,
+        engineEval: before ? formatEval(toWhite(before.score, move.color)) : undefined,
+        step: 0,
+      });
+    }
+  };
+
+  // Thế cờ trên bàn: của ván thật, hoặc của biến đang diễn lại
+  const lineStep = line && line.step > 0 ? line.exp.steps[line.step - 1] : undefined;
+  const fen = line ? (lineStep?.fen ?? line.exp.startFen) : pos === 0 ? game.startFen : game.moves[pos - 1].fenAfter;
+  const lastMove = line
+    ? lineStep && { from: lineStep.uci.slice(0, 2), to: lineStep.uci.slice(2, 4) }
+    : raw && { from: raw.uci.slice(0, 2), to: raw.uci.slice(2, 4), classification: move?.classification };
+
   const arrows = useMemo(() => {
     const out: BoardArrow[] = [];
+    if (line) {
+      // Mũi tên xanh dương: nước tiếp theo trong biến
+      const next = line.exp.steps[line.step];
+      if (next) out.push({ startSquare: next.uci.slice(0, 2), endSquare: next.uci.slice(2, 4), color: '#5a8dee' });
+      return out;
+    }
     // Nước tốt nhất lẽ ra nên đi (khi nước đã đi không phải nước engine)
     if (move?.bestUci && move.bestUci !== move.uci && move.classification !== 'book') {
       out.push({ startSquare: move.bestUci.slice(0, 2), endSquare: move.bestUci.slice(2, 4), color: '#80b64b' });
@@ -63,7 +135,7 @@ export default function ReviewPage({
       out.push({ startSquare: nextMove.bestUci.slice(0, 2), endSquare: nextMove.bestUci.slice(2, 4), color: '#f2b84b' });
     }
     return out;
-  }, [move, nextMove, hint]);
+  }, [move, nextMove, hint, line]);
 
   const nextMistake = useMemo(() => {
     const m = review?.moves.find((x) => x.ply >= pos && x.color === myColor && ERROR_CLASSES.includes(x.classification));
@@ -95,22 +167,31 @@ export default function ReviewPage({
         <BoardPanel
           fen={fen}
           orientation={orientation}
-          lastMove={raw ? { from: raw.uci.slice(0, 2), to: raw.uci.slice(2, 4), classification: move?.classification } : undefined}
+          lastMove={lastMove || undefined}
           arrows={arrows}
           winPct={review ? review.whiteWinPcts[pos] : 50}
           score={review?.whiteEvals[pos]}
           top={playerInfo(bottomColor === 'w' ? 'b' : 'w')}
           bottom={playerInfo(bottomColor)}
         />
-        <NavControls
-          pos={pos}
-          max={max}
-          onSelect={select}
-          nextMistake={nextMistake}
-          hint={hint}
-          onToggleHint={() => setHint((h) => !h)}
-          onFlip={() => setFlipped((f) => !f)}
-        />
+        {line ? (
+          <div className="line-banner">
+            <span>Đang xem biến của engine (không phải ván thật)</span>
+            <button className="btn ghost small" onClick={() => setLine(null)}>
+              Quay lại ván
+            </button>
+          </div>
+        ) : (
+          <NavControls
+            pos={pos}
+            max={max}
+            onSelect={select}
+            nextMistake={nextMistake}
+            hint={hint}
+            onToggleHint={() => setHint((h) => !h)}
+            onFlip={() => setFlipped((f) => !f)}
+          />
+        )}
       </div>
 
       <aside className="review-side">
@@ -163,7 +244,19 @@ export default function ReviewPage({
           </div>
         )}
 
-        <MoveExplain move={move} nextMove={nextMove} pos={pos} status={status} />
+        {line ? (
+          <LineViewer line={line} onStep={stepLine} onClose={() => setLine(null)} />
+        ) : (
+          <MoveExplain
+            move={move}
+            nextMove={nextMove}
+            pos={pos}
+            status={status}
+            myColor={myColor}
+            positions={review?.positions}
+            onShowLine={showLine}
+          />
+        )}
         {review && <EvalChart winPcts={review.whiteWinPcts} moves={review.moves} pos={pos} onSelect={select} />}
         <MoveList moves={game.moves} reviews={review?.moves} pos={pos} onSelect={select} />
         {review && <SummaryPanel review={review} game={game} myColor={myColor} />}
