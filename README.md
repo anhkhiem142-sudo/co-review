@@ -9,6 +9,11 @@ Web app xem lại và phân tích ván cờ vua sau khi chơi trên chess.com. T
 - Kết quả được lưu trong IndexedDB: mở lại ván không phải phân tích lại.
 - Màn hình review: bàn cờ tự xoay theo màu của bạn, thanh lợi thế, biểu đồ lợi thế (bấm để nhảy tới nước), bảng nước đi có icon theo loại, mũi tên nước tốt nhất kèm giải thích và biến chính, độ chính xác (accuracy) hai bên, bảng đếm loại nước, nút **Nước sai tiếp theo**.
 - Phím tắt: `←` `→` tua từng nước, `Home` / `End` về đầu / cuối ván.
+- **Đấu với máy có huấn luyện viên**: chọn 1 trong 7 mức (Người mới ~500 → Tối đa), cầm Trắng / Đen / ngẫu nhiên. Sau mỗi nước, huấn luyện viên chấm điểm và giải thích (vd. "Ba6 để mất Tượng ở a6: đối thủ có thể đi Nxa6. Nước tốt hơn là d4"), nhắc khi máy vừa đi sai, có **Gợi ý** (lần 1 chỉ quân, lần 2 hiện nước) và **Đi lại**. Ván đang chơi được lưu, tải lại trang vẫn chơi tiếp được; hết ván bấm **Xem lại cả ván** để mở màn hình review ngay.
+
+### Các mức của máy
+
+Chỉnh trong [`src/play/levels.ts`](src/play/levels.ts). Stockfish chỉ hỗ trợ giới hạn Elo (`UCI_Elo`) từ 1320 trở lên, nên mức **Khá / Mạnh / Kiện tướng** dùng tính năng đó, còn **Người mới / Cơ bản / Trung bình** được làm yếu bằng cách tính nông, chọn ngẫu nhiên có trọng số trong vài nước tốt nhất và thỉnh thoảng đi một nước bất kỳ — Elo của các mức này là ước lượng. Máy đối thủ chạy trong một engine 1 luồng riêng; huấn luyện viên dùng engine phân tích chính (độ sâu 14).
 - Giao diện tối, dùng tốt trên điện thoại.
 
 ## Chạy trên máy

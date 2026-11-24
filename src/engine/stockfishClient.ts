@@ -65,6 +65,19 @@ export class StockfishClient {
     return StockfishClient.boot('lite-single', 1);
   }
 
+  /** Engine 1 luồng riêng (dùng cho máy đối thủ, để không tranh tùy chọn với engine phân tích) */
+  static createSingleThread(): Promise<StockfishClient> {
+    return StockfishClient.boot('lite-single', 1);
+  }
+
+  /** Đặt tùy chọn UCI (xếp hàng sau các lệnh đang chạy) */
+  configure(options: Record<string, string | number | boolean>): Promise<void> {
+    return this.enqueue(async () => {
+      for (const [name, value] of Object.entries(options)) this.send(`setoption name ${name} value ${value}`);
+      await this.isReady();
+    });
+  }
+
   private static async boot(flavor: EngineFlavor, threads: number): Promise<StockfishClient> {
     const worker = new Worker(ENGINE_URL[flavor]);
     const client = new StockfishClient(worker, { flavor, threads, name: 'Stockfish' });

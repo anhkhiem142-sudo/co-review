@@ -10,8 +10,8 @@ export default function MoveList({
   pos,
   onSelect,
 }: {
-  moves: ParsedMove[];
-  reviews?: MoveReview[];
+  moves: Pick<ParsedMove, 'san'>[];
+  reviews?: (Pick<MoveReview, 'classification'> | undefined)[];
   pos: number;
   onSelect: (pos: number) => void;
 }) {

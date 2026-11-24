@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import HomePage from './components/home/HomePage';
+import PlayPage from './components/play/PlayPage';
 import ReviewPage from './components/review/ReviewPage';
 import { getEngine, type EngineInfo } from './engine/stockfishClient';
 import type { ParsedGame } from './game/parseGame';
 import { getDepth, setDepth as saveDepth, type DepthPreset } from './storage/prefs';
 
-type Route = { name: 'home' } | { name: 'review'; game: ParsedGame; myColor: 'w' | 'b' };
+type Tab = 'home' | 'play';
+type Route =
+  | { name: 'home' }
+  | { name: 'play' }
+  /** depth: mở Review ở độ sâu cho trước (vd. ván vừa chơi đã có sẵn kết quả ở độ sâu 12) */
+  | { name: 'review'; game: ParsedGame; myColor: 'w' | 'b'; depth?: DepthPreset };
 
 export default function App() {
   const [route, setRoute] = useState<Route>({ name: 'home' });
@@ -20,16 +26,22 @@ export default function App() {
       .catch((e: Error) => setEngineError(e.message));
   }, []);
 
-  // Nút Back của trình duyệt / điện thoại → quay lại danh sách ván
+  // Nút Back của trình duyệt / điện thoại → quay lại tab đã mở màn hình Review
   useEffect(() => {
-    const onPop = () => setRoute({ name: 'home' });
+    const onPop = (e: PopStateEvent) => setRoute(e.state?.tab === 'play' ? { name: 'play' } : { name: 'home' });
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  const openGame = useCallback((game: ParsedGame, myColor: 'w' | 'b') => {
+  const openGame = useCallback((game: ParsedGame, myColor: 'w' | 'b', depthOverride?: DepthPreset) => {
     window.history.pushState({ review: game.id }, '');
-    setRoute({ name: 'review', game, myColor });
+    setRoute({ name: 'review', game, myColor, depth: depthOverride });
+    window.scrollTo(0, 0);
+  }, []);
+
+  const goTab = useCallback((tab: Tab) => {
+    window.history.replaceState({ tab }, '');
+    setRoute(tab === 'play' ? { name: 'play' } : { name: 'home' });
     window.scrollTo(0, 0);
   }, []);
 
@@ -46,10 +58,18 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <button className="brand-btn" onClick={goHome} aria-label="Cờ Review — trang chủ">
+        <button className="brand-btn" onClick={() => goTab('home')} aria-label="Cờ Review — trang chủ">
           <img src="/logo.svg" alt="" width={30} height={30} />
           <span className="brand">Cờ Review</span>
         </button>
+        <nav className="tabs" aria-label="Chế độ">
+          <button className={route.name !== 'play' ? 'active' : ''} onClick={() => goTab('home')}>
+            Xem lại ván
+          </button>
+          <button className={route.name === 'play' ? 'active' : ''} onClick={() => goTab('play')}>
+            Đấu với máy
+          </button>
+        </nav>
         <span className="engine-status muted small" title={engine ? `${engine.name}` : undefined}>
           {engineError
             ? 'Engine lỗi'
@@ -63,13 +83,18 @@ export default function App() {
         {engineError && <p className="error card">Không khởi động được Stockfish: {engineError}</p>}
         {route.name === 'home' ? (
           <HomePage depth={depth} onDepthChange={changeDepth} onOpenGame={openGame} />
+        ) : route.name === 'play' ? (
+          <PlayPage onReview={(game, color) => openGame(game, color, 12)} />
         ) : (
           <ReviewPage
             key={route.game.id}
             game={route.game}
             myColor={route.myColor}
-            depth={depth}
-            onDepthChange={changeDepth}
+            depth={route.depth ?? depth}
+            onDepthChange={(d) => {
+              changeDepth(d);
+              setRoute((r) => (r.name === 'review' ? { ...r, depth: undefined } : r));
+            }}
             onBack={goHome}
           />
         )}

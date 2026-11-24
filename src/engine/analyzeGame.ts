@@ -13,7 +13,7 @@ export interface EvaluateOptions {
 export const maxMsFor = (depth: number) => (depth <= 12 ? 1000 : depth <= 16 ? 2500 : 6000);
 
 /** Thế cờ đã kết thúc → không cần engine */
-function terminalEval(fen: string): PositionEval | null {
+export function terminalEval(fen: string): PositionEval | null {
   const chess = new Chess(fen);
   if (chess.isCheckmate()) return { lines: [{ score: { mate: 0 }, pv: [] }] };
   if (chess.isStalemate() || chess.isInsufficientMaterial()) return { lines: [{ score: { cp: 0 }, pv: [] }] };
