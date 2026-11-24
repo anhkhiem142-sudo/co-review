@@ -61,8 +61,27 @@ interface SavedGame {
 /** Engine huấn luyện viên: đủ sâu để chấm điểm, đủ nhanh để không phải chờ */
 const COACH_DEPTH = 14;
 const COACH_MS = 1500;
-/** Máy luôn "nghĩ" ít nhất ngần này để người chơi kịp nhìn */
-const MIN_THINK_MS = 600;
+/**
+ * Tốc độ máy đi:
+ * - minThinkMs: máy luôn "nghĩ" ít nhất ngần này
+ * - afterCoachMs: sau khi thầy nhận xét nước của bạn, chờ thêm ngần này để bạn kịp đọc
+ */
+export const SPEEDS = {
+  fast: { label: 'Nhanh', minThinkMs: 600, afterCoachMs: 0 },
+  normal: { label: 'Vừa', minThinkMs: 1500, afterCoachMs: 1200 },
+  slow: { label: 'Chậm', minThinkMs: 3000, afterCoachMs: 2500 },
+} as const;
+export type Speed = keyof typeof SPEEDS;
+const SPEED_KEY = 'co-review:play-speed';
+
+function loadSpeed(): Speed {
+  try {
+    const v = localStorage.getItem(SPEED_KEY);
+    return v === 'fast' || v === 'slow' ? v : 'normal';
+  } catch {
+    return 'normal';
+  }
+}
 const SAVE_KEY = 'co-review:play';
 
 const START_FEN = new Chess().fen();
@@ -101,6 +120,8 @@ function clearSaved() {
 
 export function usePlayGame() {
   const [state, setState] = useState<PlayState>(initialState);
+  const [speed, setSpeedState] = useState<Speed>(loadSpeed);
+  const speedRef = useRef<Speed>(speed);
 
   const chessRef = useRef(new Chess());
   const movesRef = useRef<PlayMove[]>([]);
@@ -289,7 +310,8 @@ export function usePlayGame() {
     return eng;
   }
 
-  async function opponentTurn(gen: number) {
+  /** coachShown: Promise xong khi lời nhận xét nước vừa đi của bạn đã hiện */
+  async function opponentTurn(gen: number, coachShown?: Promise<void>) {
     const settings = settingsRef.current;
     if (!settings) return;
     setStatus('thinking');
@@ -302,7 +324,13 @@ export function usePlayGame() {
       if (gen !== genRef.current) return;
       const legal = chessRef.current.moves({ verbose: true }).map((m) => m.from + m.to + (m.promotion ?? ''));
       const uci = pickMove(lines, legal, level);
-      const wait = MIN_THINK_MS - (performance.now() - t0);
+      const speed = SPEEDS[speedRef.current];
+      // Chờ thầy nhận xét xong nước của bạn (tối đa 6 giây), rồi cho bạn thời gian đọc
+      if (coachShown && speed.afterCoachMs > 0) {
+        await Promise.race([coachShown, sleep(6000)]);
+        await sleep(speed.afterCoachMs);
+      }
+      const wait = speed.minThinkMs - (performance.now() - t0);
       if (wait > 0) await sleep(wait);
       if (gen !== genRef.current || !uci) return;
       const pm = applyMove(uciToMove(uci));
@@ -367,9 +395,9 @@ export function usePlayGame() {
     if (!pm) return false;
     hintStageRef.current = null;
     const gen = genRef.current;
-    coachUserMove(pm.ply, gen);
+    const coachShown = coachUserMove(pm.ply, gen);
     if (checkGameOver()) return true;
-    opponentTurn(gen);
+    opponentTurn(gen, coachShown);
     return true;
   }
 
@@ -471,5 +499,15 @@ export function usePlayGame() {
     return { pgn, id, userColor: settings.userColor };
   }
 
-  return { state, start, resume, userMove, undo, hint, resign, newGame, exportForReview, analysisFor };
+  function setSpeed(s: Speed) {
+    speedRef.current = s;
+    setSpeedState(s);
+    try {
+      localStorage.setItem(SPEED_KEY, s);
+    } catch {
+      /* bỏ qua */
+    }
+  }
+
+  return { state, speed, setSpeed, start, resume, userMove, undo, hint, resign, newGame, exportForReview, analysisFor };
 }

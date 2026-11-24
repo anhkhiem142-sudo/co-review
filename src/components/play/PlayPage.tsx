@@ -5,7 +5,7 @@ import type { EngineScore } from '../../engine/stockfishClient';
 import { parsePgn, type ParsedGame } from '../../game/parseGame';
 import { useKeyboardNav } from '../../hooks/useKeyboardNav';
 import { getLevel } from '../../play/levels';
-import { usePlayGame } from '../../play/usePlayGame';
+import { SPEEDS, usePlayGame, type Speed } from '../../play/usePlayGame';
 import { getUsername } from '../../storage/prefs';
 import EvalBar from '../review/EvalBar';
 import MoveList from '../review/MoveList';
@@ -77,7 +77,8 @@ export default function PlayPage({ onReview }: { onReview: (game: ParsedGame, my
   const live = view == null;
   const orientation: 'white' | 'black' = (settings.userColor === 'w') !== flipped ? 'white' : 'black';
   const last = state.moves[pos - 1];
-  const whiteWin = liveEval && liveEval.fen === fen ? winPercent(scoreToCp(liveEval.score)) : 50;
+  // Giữ giá trị cũ trong lúc engine đang tính thế mới → thanh không bị giật về giữa
+  const whiteWin = liveEval ? winPercent(scoreToCp(liveEval.score)) : 50;
   const me = getUsername() || 'Bạn';
   const thinking = state.status === 'thinking';
   const canUndo = state.moves.some((m) => m.color === settings.userColor) && state.status !== 'thinking';
@@ -107,7 +108,7 @@ export default function PlayPage({ onReview }: { onReview: (game: ParsedGame, my
             {topName !== settings.userColor && thinking && <span className="muted small">đang nghĩ…</span>}
           </div>
           <div className="board-row" style={showEval ? undefined : { gridTemplateColumns: '0 minmax(0,1fr)' }}>
-            {showEval ? <EvalBar winPct={whiteWin} score={liveEval?.fen === fen ? liveEval.score : undefined} flipped={orientation === 'black'} /> : <span />}
+            {showEval ? <EvalBar winPct={whiteWin} score={liveEval?.score} flipped={orientation === 'black'} /> : <span />}
             <PlayBoard
               fen={fen}
               orientation={orientation}
@@ -182,6 +183,16 @@ export default function PlayPage({ onReview }: { onReview: (game: ParsedGame, my
               {state.undos > 0 && ` · đi lại ${state.undos} lần`}
               {state.hints > 0 && ` · ${state.hints} gợi ý`}
             </span>
+          </div>
+          <div className="speed-row">
+            <span className="muted small">Máy đi</span>
+            <div className="segmented" role="radiogroup" aria-label="Tốc độ máy đi">
+              {(Object.keys(SPEEDS) as Speed[]).map((s) => (
+                <button key={s} role="radio" aria-checked={game.speed === s} className={game.speed === s ? 'active' : ''} onClick={() => game.setSpeed(s)}>
+                  {SPEEDS[s].label}
+                </button>
+              ))}
+            </div>
           </div>
           {state.result && <p className="result-line">{state.result.text}</p>}
           {state.error && <p className="error">{state.error}</p>}
