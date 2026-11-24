@@ -65,6 +65,28 @@ describe('explainLine', () => {
     expect(formatSans(sw.startPly, sw.sans)).toBe('2. Ba6 Nxa6 3. d4 d5');
   });
 
+  it('không dừng giữa lúc đổi quân: đi tiếp tới khi ăn lại xong', () => {
+    // maxPlies = 3 sẽ dừng ở exd5 (vừa ăn), phải đi tiếp Qxd5
+    const r = explainLine(START, ['e2e4', 'd7d5', 'e4d5', 'd8d5', 'b1c3', 'd5a5'], 'w', 3);
+    expect(r.steps.map((s) => s.san)).toEqual(['e4', 'd5', 'exd5', 'Qxd5']);
+    expect(r.endBalance).toBe(0);
+    expect(r.settled).toBe(false);
+  });
+
+  it('biến của engine hết đúng lúc vừa ăn → tính thêm nước ăn lại', () => {
+    // 4. d4?? kiểu biến dừng ở "Qxd8+": ở đây biến dừng ở exd5, Đen ăn lại được bằng Hậu
+    const r = explainLine(START, ['e2e4', 'd7d5', 'e4d5'], 'w', 10);
+    expect(r.steps.at(-1)?.san).toBe('exd5');
+    expect(r.steps.at(-1)?.balance).toBe(1);
+    expect(r.endBalance).toBe(0);
+    expect(r.settled).toBe(true);
+    expect(r.summary).toContain('ngang nhau');
+  });
+
+  it('materialSwing dùng điểm quân đã ngã ngũ', () => {
+    expect(materialSwing(START, ['e2e4', 'd7d5', 'e4d5'], 'w').diff).toBe(0);
+  });
+
   it('biến rỗng', () => {
     expect(explainLine(START, [], 'w').summary).toBe('Không có biến để hiển thị.');
   });

@@ -40,27 +40,41 @@ function reasonsFor(move: MoveReview, before?: PositionEval, after?: PositionEva
   else if (threat?.kind === 'wins') out.push(`${move.san} để mất ${threat.piece} ở ${threat.square}: ${opp} có thể đi ${threat.san}.`);
   const subject = isMine ? 'bạn' : 'bên đi';
 
-  // Không mất quân ngay → nhìn trước ~6 nước theo biến của engine
-  if (!threat && after?.lines[0]?.pv.length) {
-    const sw = materialSwing(move.fenAfter, after.lines[0].pv, move.color);
-    if (sw.diff <= -2 && sw.ownLost) {
-      out.push(
-        `Sau ${move.san}, ${opp} có đòn: ${formatSans(sw.startPly, sw.sans)} — trong ${Math.ceil(sw.sans.length / 2)} nước ${subject} sẽ mất ${sw.ownLost}${sw.oppLost ? ` (đổi lại chỉ được ${sw.oppLost})` : ''}.`,
-      );
-    }
+  // So sánh kết quả quân số của 2 lựa chọn (cùng cách tính như nút "Diễn biến":
+  // ~10 nước theo biến engine, không dừng giữa lúc đổi quân)
+  const played = after?.lines[0] ? materialSwing(move.fenBefore, [move.uci, ...after.lines[0].pv], move.color) : undefined;
+  const best = before?.lines[0]?.pv.length ? materialSwing(move.fenBefore, before.lines[0].pv, move.color) : undefined;
+  const fmt = (d: number) => (d > 0 ? `lời ${d}` : d < 0 ? `thiệt ${-d}` : 'hòa vốn');
+
+  // Không mất quân ngay nhưng có đòn mất quân sau vài nước
+  if (!threat && played && played.diff <= -2 && played.ownLost) {
+    out.push(
+      `Sau ${move.san}, ${opp} có đòn: ${formatSans(played.startPly + 1, played.sans.slice(1, 7))} — ${subject} sẽ mất ${played.ownLost}${played.oppLost ? ` (đổi lại chỉ được ${played.oppLost})` : ''}.`,
+    );
   }
 
   const missed = describeMissed(move.fenBefore, before?.lines[0]);
   if (missed?.kind === 'mate') out.push(`Đã bỏ lỡ nước chiếu hết: ${missed.line}.`);
   else if (missed?.kind === 'capture') out.push(`Đã bỏ lỡ cơ hội ăn ${missed.piece} bằng ${missed.san}.`);
-  else if (before?.lines[0]?.pv.length && move.bestSan) {
-    // Nước tốt nhất có lời quân sau vài nước không?
-    const sw = materialSwing(move.fenBefore, before.lines[0].pv, move.color);
-    if (sw.diff >= 2 && sw.oppLost) out.push(`Nếu đi ${move.bestSan}, sau vài nước ${subject} sẽ ăn được ${sw.oppLost}: ${formatSans(sw.startPly, sw.sans)}.`);
+
+  if (played && best && missed?.kind !== 'mate') {
+    const gap = best.diff - played.diff;
+    if (gap >= 2) {
+      // Nước tốt nhất lời quân nhiều hơn hẳn
+      if (played.diff >= 1)
+        out.push(`Nước này vẫn giúp ${subject} lời ${played.diff} điểm quân, nhưng ${move.bestSan} lời được ${best.diff} — tức là bỏ lỡ ${gap} điểm quân.`);
+      else if (missed?.kind !== 'capture')
+        out.push(`Nếu đi ${move.bestSan}, ${subject} sẽ ${fmt(best.diff)} điểm quân (${formatSans(best.startPly, best.sans.slice(0, 6))}); còn với ${move.san} thì ${fmt(played.diff)}.`);
+    } else if (out.length === 0) {
+      // Quân số như nhau → engine chấm thấp vì thế cờ
+      out.push(
+        `Về quân số, nước này không thua nước tốt nhất (${fmt(played.diff)} so với ${fmt(best.diff)} điểm quân sau khoảng ${Math.ceil(played.sans.length / 2)} nước). Engine chấm thấp vì thế cờ sau đó kém hơn: quân bị dồn ép, Vua kém an toàn, hoặc đối thủ có thế công — bấm "Diễn biến" để xem.`,
+      );
+    }
   }
 
   if (out.length === 0 && move.classification !== 'inaccuracy')
-    out.push('Không mất quân, nhưng thế cờ xấu đi (vị trí quân, an toàn của Vua…) — bấm "Diễn biến" bên dưới để xem engine thấy gì.');
+    out.push('Thế cờ xấu đi (vị trí quân, an toàn của Vua…) — bấm "Diễn biến" bên dưới để xem engine thấy gì.');
   return out;
 }
 

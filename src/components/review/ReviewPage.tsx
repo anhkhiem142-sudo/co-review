@@ -91,7 +91,7 @@ export default function ReviewPage({
     const after = review.positions[pos]?.lines[0];
     const opp = move.color === 'w' ? 'b' : 'w';
     if (kind === 'played') {
-      const exp = explainLine(move.fenBefore, [move.uci, ...(after?.pv ?? [])], myColor, 11);
+      const exp = explainLine(move.fenBefore, [move.uci, ...(after?.pv ?? [])], myColor, 10);
       setLine({
         kind,
         title: `Diễn biến sau ${moveNumber(move.ply)} ${move.san}`,
