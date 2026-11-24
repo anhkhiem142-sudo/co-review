@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { stepNumber, type LineExplanation } from '../../analysis/lineExplain';
 
 export interface ActiveLine {
@@ -38,6 +38,18 @@ export default function LineViewer({
   }, [auto, step, total, onStep]);
 
   const current = exp.steps[step - 1];
+  const keyStep = exp.keyIndex != null ? exp.keyIndex + 1 : null;
+
+  // Biến có thể dài → cuộn danh sách theo nước đang xem
+  const listRef = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    const box = listRef.current;
+    const el = box?.querySelector<HTMLElement>('.lv-step.active');
+    if (!box || !el) return;
+    if (el.offsetTop < box.scrollTop || el.offsetTop + el.offsetHeight > box.scrollTop + box.clientHeight) {
+      box.scrollTop = el.offsetTop - box.clientHeight / 2;
+    }
+  }, [step]);
 
   return (
     <div className="card line-viewer" aria-live="polite">
@@ -62,14 +74,20 @@ export default function LineViewer({
         )}
       </p>
 
-      <ol className="lv-steps">
+      <ol className="lv-steps" ref={listRef}>
         {exp.steps.map((s, i) => (
           <li key={i}>
-            <button className={`lv-step ${i + 1 === step ? 'active' : ''} ${i + 1 > step ? 'future' : ''}`} onClick={() => onStep(i + 1)}>
+            <button
+              className={`lv-step ${i + 1 === step ? 'active' : ''} ${i + 1 > step ? 'future' : ''} ${i === exp.keyIndex ? 'key' : ''}`}
+              onClick={() => onStep(i + 1)}
+            >
               <span className="lv-num">{stepNumber(s.ply)}</span>
               <span className="lv-san">{s.san}</span>
               <span className={`lv-who ${s.isMe ? 'me' : 'opp'}`}>{s.isMe ? 'Bạn' : 'Đối thủ'}</span>
-              {s.notes.length > 0 && <span className="lv-notes">{s.notes.join(', ')}</span>}
+              <span className="lv-notes">
+                {s.notes.join(', ')}
+                {i === exp.keyIndex && <span className="lv-key">⚑ rõ kết quả</span>}
+              </span>
               <span className={`lv-bal ${s.balance > 0 ? 'pos' : s.balance < 0 ? 'neg' : ''}`}>{fmtBalance(s.balance)}</span>
             </button>
           </li>
@@ -99,6 +117,11 @@ export default function LineViewer({
         <button className="btn icon" onClick={() => onStep(total)} disabled={step >= total} aria-label="Tới cuối biến">
           ⏭
         </button>
+        {keyStep != null && (
+          <button className="btn key-btn" onClick={() => onStep(keyStep)} disabled={step === keyStep} title="Nhảy tới nước mà kết quả lộ rõ">
+            ⚑ Tới lúc rõ kết quả
+          </button>
+        )}
         <button
           className={`btn ${auto ? 'ghost on' : 'primary'}`}
           onClick={() => {

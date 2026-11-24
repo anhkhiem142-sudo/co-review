@@ -1,9 +1,9 @@
-import { formatSans, materialSwing } from '../../analysis/lineExplain';
+import { explainLine, formatSans, materialSwing } from '../../analysis/lineExplain';
 import type { MoveReview, PositionEval } from '../../analysis/review';
 import type { Classification } from '../../analysis/types';
 import { negateScore } from '../../analysis/winProb';
 import type { EngineScore } from '../../engine/stockfishClient';
-import { describeMissed, describeThreat } from '../../play/coach';
+import { capturedBy, describeMissed, describeThreat } from '../../play/coach';
 import { CLASS_META, ClassIcon, formatEval, moveNumber } from '../classMeta';
 
 const EXTRA: Partial<Record<Classification, string>> = {
@@ -31,25 +31,30 @@ const toWhite = (s: EngineScore, mover: 'w' | 'b') => (mover === 'w' ? s : negat
 const pct = (ep: number) => `${Math.round(ep * 100)}%`;
 
 /** Lý do cụ thể cho nước sai: mất quân / bị chiếu hết / bỏ lỡ đòn */
-function reasonsFor(move: MoveReview, before?: PositionEval, after?: PositionEval, isMine?: boolean): string[] {
+export function reasonsFor(move: MoveReview, before?: PositionEval, after?: PositionEval, isMine?: boolean): string[] {
   if (!BAD.includes(move.classification)) return [];
   const out: string[] = [];
   const opp = isMine ? 'đối thủ' : 'bên kia';
-  const threat = describeThreat(move.fenAfter, after?.lines[0]);
+  const threat = describeThreat(move.fenAfter, after?.lines[0], capturedBy(move.fenBefore, move.uci));
   if (threat?.kind === 'mate') out.push(`Sau ${move.san}, ${opp} có thể chiếu hết trong ${threat.moves} nước, bắt đầu bằng ${threat.san}.`);
   else if (threat?.kind === 'wins') out.push(`${move.san} để mất ${threat.piece} ở ${threat.square}: ${opp} có thể đi ${threat.san}.`);
   const subject = isMine ? 'bạn' : 'bên đi';
 
   // So sánh kết quả quân số của 2 lựa chọn (cùng cách tính như nút "Diễn biến":
-  // ~10 nước theo biến engine, không dừng giữa lúc đổi quân)
+  // theo biến engine tới lúc kết quả ngã ngũ)
   const played = after?.lines[0] ? materialSwing(move.fenBefore, [move.uci, ...after.lines[0].pv], move.color) : undefined;
   const best = before?.lines[0]?.pv.length ? materialSwing(move.fenBefore, before.lines[0].pv, move.color) : undefined;
   const fmt = (d: number) => (d > 0 ? `lời ${d}` : d < 0 ? `thiệt ${-d}` : 'hòa vốn');
+  /** Chuỗi nước ngắn gọn trong câu giải thích (bản đầy đủ xem ở khung Diễn biến) */
+  const short = (startPly: number, sans: string[]) => formatSans(startPly, sans.slice(0, 8)) + (sans.length > 8 ? ' …' : '');
+  /** "sau 5 nước" — số nước tới lúc kết quả lộ rõ */
+  const within = (sw: typeof played) => (sw?.keyPlies ? `sau ${sw.keyPlies} nước` : 'sau cả biến');
 
   // Không mất quân ngay nhưng có đòn mất quân sau vài nước
   if (!threat && played && played.diff <= -2 && played.ownLost) {
+    const upto = played.keyPlies ?? played.sans.length;
     out.push(
-      `Sau ${move.san}, ${opp} có đòn: ${formatSans(played.startPly + 1, played.sans.slice(1, 7))} — ${subject} sẽ mất ${played.ownLost}${played.oppLost ? ` (đổi lại chỉ được ${played.oppLost})` : ''}.`,
+      `Sau ${move.san}, ${opp} có đòn: ${short(played.startPly + 1, played.sans.slice(1, upto))} — ${within(played)} ${subject} mất ${played.ownLost}${played.oppLost ? ` (đổi lại chỉ được ${played.oppLost})` : ''}.`,
     );
   }
 
@@ -62,14 +67,27 @@ function reasonsFor(move: MoveReview, before?: PositionEval, after?: PositionEva
     if (gap >= 2) {
       // Nước tốt nhất lời quân nhiều hơn hẳn
       if (played.diff >= 1)
-        out.push(`Nước này vẫn giúp ${subject} lời ${played.diff} điểm quân, nhưng ${move.bestSan} lời được ${best.diff} — tức là bỏ lỡ ${gap} điểm quân.`);
+        out.push(
+          `Nước này vẫn giúp ${subject} lời ${played.diff} điểm quân (${within(played)}), nhưng ${move.bestSan} lời được ${best.diff} (${within(best)}) — tức là bỏ lỡ ${gap} điểm quân.`,
+        );
       else if (missed?.kind !== 'capture')
-        out.push(`Nếu đi ${move.bestSan}, ${subject} sẽ ${fmt(best.diff)} điểm quân (${formatSans(best.startPly, best.sans.slice(0, 6))}); còn với ${move.san} thì ${fmt(played.diff)}.`);
+        out.push(
+          `Nếu đi ${move.bestSan}, ${within(best)} ${subject} ${fmt(best.diff)} điểm quân (${short(best.startPly, best.sans.slice(0, best.keyPlies ?? 6))}); còn với ${move.san} thì ${fmt(played.diff)}.`,
+        );
     } else if (out.length === 0) {
-      // Quân số như nhau → engine chấm thấp vì thế cờ
-      out.push(
-        `Về quân số, nước này không thua nước tốt nhất (${fmt(played.diff)} so với ${fmt(best.diff)} điểm quân sau khoảng ${Math.ceil(played.sans.length / 2)} nước). Engine chấm thấp vì thế cờ sau đó kém hơn: quân bị dồn ép, Vua kém an toàn, hoặc đối thủ có thế công — bấm "Diễn biến" để xem.`,
-      );
+      // Quân số gần như nhau → lợi thế của nước tốt nhất nằm ở thế cờ / đòn tấn công Vua
+      const bestW = before?.lines[0] ? formatEval(toWhite(before.lines[0].score, move.color)) : '?';
+      const evalText = `Engine đánh giá: nếu đi ${move.bestSan} là ${bestW}, còn sau ${move.san} chỉ ${formatEval(move.evalAfter)} (dương = Trắng hơn).`;
+      const checks = before?.lines[0] ? explainLine(move.fenBefore, before.lines[0].pv, move.color).steps.filter((s) => s.isMe && s.check).length : 0;
+      if (checks >= 2) {
+        out.push(
+          `${evalText} Lợi thế của ${move.bestSan} đến từ đòn tấn công thẳng vào Vua đối thủ (biến tốt nhất có ${checks} nước chiếu) — chưa kịp thành quân trong biến engine tính, nhưng rất khó đỡ.`,
+        );
+      } else {
+        out.push(
+          `${evalText} Về quân số hai lựa chọn tương đương (${fmt(played.diff)} so với ${fmt(best.diff)}), nên khác biệt nằm ở thế cờ: vị trí quân, an toàn của Vua, thế công — bấm "Nếu đi ${move.bestSan}" để xem engine định làm gì.`,
+        );
+      }
     }
   }
 

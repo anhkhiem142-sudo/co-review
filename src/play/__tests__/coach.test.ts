@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { commentOnOpponentMove, commentOnUserMove, describeMissed, describeThreat, formatLine, hintMessage } from '../coach';
+import { capturedBy, commentOnOpponentMove, commentOnUserMove, describeMissed, describeThreat, formatLine, hintMessage } from '../coach';
 
 describe('describeThreat', () => {
   it('phát hiện để mất Hậu', () => {
@@ -12,6 +12,15 @@ describe('describeThreat', () => {
       san: 'Rxa4',
     });
   });
+  it('đổi Hậu (vừa ăn Hậu, bị ăn lại) không bị báo là mất Hậu', () => {
+    // Trắng Qd1xd5 ăn Hậu đen, Đen e6xd5 ăn lại
+    const fenBefore = '4k3/8/4p3/3q4/8/8/8/3QK3 w - - 0 1';
+    const fenAfter = '4k3/8/4p3/3Q4/8/8/8/4K3 b - - 0 1';
+    const reply = { score: { cp: 0 }, pv: ['e6d5'] };
+    expect(describeThreat(fenAfter, reply)?.kind).toBe('wins'); // không biết nước trước ăn gì → tưởng mất Hậu
+    expect(describeThreat(fenAfter, reply, capturedBy(fenBefore, 'd1d5'))).toBeNull();
+  });
+
   it('phát hiện bị chiếu hết', () => {
     const fenAfter = '6k1/8/8/8/8/8/5PPP/r5K1 w - - 0 1'.replace(' w ', ' b ');
     const t = describeThreat(fenAfter, { score: { mate: 1 }, pv: ['a1a2'] });

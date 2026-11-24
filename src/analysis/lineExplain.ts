@@ -37,6 +37,8 @@ export interface LineExplanation {
   endBalance: number;
   /** Biến hết giữa lúc đổi quân → endBalance đã tính thêm nước ăn lại */
   settled: boolean;
+  /** Vị trí (trong steps) của thời điểm kết quả ngã ngũ; null nếu quân số không đổi */
+  keyIndex: number | null;
   /** Câu tổng kết cuối biến */
   summary: string;
 }
@@ -85,11 +87,12 @@ function isCaptureMove(chess: Chess, uci: string): boolean {
 
 /**
  * Diễn giải biến `ucis` bắt đầu từ `startFen`, theo góc nhìn người chơi `myColor`.
- * Đi khoảng `maxPlies` nước, nhưng KHÔNG dừng giữa lúc đổi quân: nếu nước cuối là ăn quân / chiếu
- * hoặc nước kế tiếp là ăn quân thì đi tiếp (tối đa thêm QUIET_EXTENSION nước). Nếu biến của engine
- * hết đúng lúc vừa ăn quân, tính thêm nước ăn lại bằng SEE.
+ * Mặc định đi hết biến của engine. Nếu đặt `maxPlies` thì vẫn KHÔNG dừng giữa lúc đổi quân
+ * (đi tiếp khi nước kế là ăn quân / đang bị chiếu, tối đa thêm QUIET_EXTENSION nước).
+ * Nếu biến hết đúng lúc vừa ăn quân, tính thêm nước ăn lại bằng SEE.
+ * `keyIndex` = thời điểm kết quả ngã ngũ (nước cuối cùng làm quân số thay đổi, hoặc chiếu hết).
  */
-export function explainLine(startFen: string, ucis: string[], myColor: 'w' | 'b', maxPlies = 10): LineExplanation {
+export function explainLine(startFen: string, ucis: string[], myColor: 'w' | 'b', maxPlies = Infinity): LineExplanation {
   const chess = new Chess(startFen);
   const startBalance = materialBalance(startFen, myColor);
   const startPly = plyOf(startFen);
@@ -142,14 +145,30 @@ export function explainLine(startFen: string, ucis: string[], myColor: 'w' | 'b'
     }
   }
 
+  const keyIndex = findKeyIndex(steps, startBalance, endBalance, settled);
+
   return {
     startFen,
     startBalance,
     steps,
     endBalance,
     settled,
-    summary: summarize(startFen, steps, myColor, startBalance, endBalance, settled),
+    keyIndex,
+    summary: summarize(startFen, steps, myColor, startBalance, endBalance, settled, keyIndex),
   };
+}
+
+/** Thời điểm kết quả ngã ngũ: chiếu hết, hoặc nước cuối cùng làm quân số thay đổi */
+function findKeyIndex(steps: LineStep[], startBalance: number, endBalance: number, settled: boolean): number | null {
+  const mate = steps.findIndex((s) => s.notes.includes('chiếu hết!'));
+  if (mate >= 0) return mate;
+  if (steps.length === 0 || endBalance === startBalance) return null;
+  if (settled) return steps.length - 1;
+  for (let k = steps.length - 1; k >= 0; k--) {
+    const prev = k === 0 ? startBalance : steps[k - 1].balance;
+    if (steps[k].balance !== prev) return k;
+  }
+  return null;
 }
 
 export interface MaterialSwing {
@@ -159,20 +178,19 @@ export interface MaterialSwing {
   ownLost: string;
   /** Quân bên kia mất */
   oppLost: string;
-  /** Các nước (SAN) trong cửa sổ đã xét */
+  /** Các nước (SAN) trong biến */
   sans: string[];
   /** ply bắt đầu (để đánh số nước) */
   startPly: number;
+  /** Số nước tới lúc kết quả ngã ngũ (null nếu quân số không đổi) */
+  keyPlies: number | null;
 }
 
-/**
- * Điểm quân thay đổi thế nào sau khoảng `maxPlies` nước của biến
- * (không dừng giữa lúc đổi quân — xem explainLine).
- */
-export function materialSwing(startFen: string, ucis: string[], color: 'w' | 'b', maxPlies = 10): MaterialSwing {
+/** Điểm quân thay đổi thế nào theo biến của engine, tính tới lúc kết quả ngã ngũ */
+export function materialSwing(startFen: string, ucis: string[], color: 'w' | 'b', maxPlies = Infinity): MaterialSwing {
   const exp = explainLine(startFen, ucis, color, maxPlies);
-  const last = exp.steps[exp.steps.length - 1];
-  const endFen = last?.fen ?? startFen;
+  const keyStep = exp.keyIndex != null ? exp.steps[exp.keyIndex] : exp.steps[exp.steps.length - 1];
+  const endFen = keyStep?.fen ?? startFen;
   const opp = color === 'w' ? 'b' : 'w';
   const a = countPieces(startFen);
   const b = countPieces(endFen);
@@ -182,6 +200,7 @@ export function materialSwing(startFen: string, ucis: string[], color: 'w' | 'b'
     oppLost: lostPieces(a[opp], b[opp]),
     sans: exp.steps.map((s) => s.san),
     startPly: plyOf(startFen),
+    keyPlies: exp.keyIndex != null ? exp.keyIndex + 1 : null,
   };
 }
 
@@ -203,15 +222,18 @@ function summarize(
   startBalance: number,
   endBalance: number,
   settled: boolean,
+  keyIndex: number | null,
 ): string {
   if (steps.length === 0) return 'Không có biến để hiển thị.';
-  const last = steps[steps.length - 1];
-  const n = Math.ceil(steps.length / 2);
-  if (last.notes.includes('chiếu hết!')) return last.isMe ? `Bạn chiếu hết sau ${n} nước.` : `Bạn bị chiếu hết sau ${n} nước.`;
+  const key = keyIndex != null ? steps[keyIndex] : undefined;
+  if (key?.notes.includes('chiếu hết!')) {
+    const n = keyIndex! + 1;
+    return key.isMe ? `Bạn chiếu hết sau ${n} nước (${stepNumber(key.ply)} ${key.san}).` : `Bạn bị chiếu hết sau ${n} nước (${stepNumber(key.ply)} ${key.san}).`;
+  }
 
   const opp = myColor === 'w' ? 'b' : 'w';
   const a = countPieces(startFen);
-  const b = countPieces(last.fen);
+  const b = countPieces((key ?? steps[steps.length - 1]).fen);
   const meLost = lostPieces(a[myColor], b[myColor]);
   const oppLost = lostPieces(a[opp], b[opp]);
   const diff = endBalance - startBalance;
@@ -227,6 +249,7 @@ function summarize(
   else if (diff >= 1) parts.push(`Tính ra bạn lời ${diff} điểm quân.`);
   else parts.push('Quân số hai bên vẫn ngang nhau — khác biệt nằm ở thế cờ (vị trí quân, an toàn của Vua, tốt thông…).');
 
-  const head = `Sau ${steps.length} nước`;
-  return `${head}: ${parts.join(' ')}`.replace(': b', ': B').replace(': đ', ': Đ');
+  // Nói rõ cần bao nhiêu nước để tới lúc kết quả lộ ra
+  const head = key ? `Sau ${keyIndex! + 1} nước (đến ${stepNumber(key.ply)} ${key.san})` : `Sau cả ${steps.length} nước của biến`;
+  return `${head}: ${parts.join(' ')}`.replace(': b', ': B').replace(': đ', ': Đ').replace(': q', ': Q');
 }

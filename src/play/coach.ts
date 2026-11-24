@@ -1,4 +1,5 @@
 import { Chess, type Square } from 'chess.js';
+import { CLASSIFY_CONFIG } from '../analysis/config';
 import { see, uciToMove } from '../analysis/material';
 import type { Opening } from '../analysis/openings';
 import type { Classification } from '../analysis/types';
@@ -74,8 +75,22 @@ export function formatLine(fen: string, pv: string[], max = 6): string {
 
 type Threat = { kind: 'mate'; moves: number; san: string } | { kind: 'wins'; piece: string; square: string; san: string };
 
-/** Sau nước của mình, đối thủ có đòn gì? (chiếu hết, hoặc ăn được quân có lời ≥ 2 điểm) */
-export function describeThreat(fenAfter: string, reply?: { score: EngineScore; pv: string[] }): Threat | null {
+/** Quân mà nước `uci` vừa ăn (ô + giá trị), để không báo nhầm "mất quân" khi chỉ là đổi quân */
+export function capturedBy(fenBefore: string, uci: string): { square: string; value: number } | undefined {
+  const to = uci.slice(2, 4) as Square;
+  const p = new Chess(fenBefore).get(to);
+  return p ? { square: to, value: CLASSIFY_CONFIG.pieceValues[p.type] ?? 0 } : undefined;
+}
+
+/**
+ * Sau nước của mình, đối thủ có đòn gì? (chiếu hết, hoặc ăn được quân có lời ≥ 2 điểm).
+ * `justCaptured`: quân mình vừa ăn ở nước đó — nếu đối thủ ăn lại đúng ô thì trừ đi (đổi quân).
+ */
+export function describeThreat(
+  fenAfter: string,
+  reply?: { score: EngineScore; pv: string[] },
+  justCaptured?: { square: string; value: number },
+): Threat | null {
   const replyUci = reply?.pv[0];
   if (!replyUci) return null;
   const san = lineToSan(fenAfter, [replyUci], 1)[0];
@@ -84,8 +99,9 @@ export function describeThreat(fenAfter: string, reply?: { score: EngineScore; p
   const chess = new Chess(fenAfter);
   const to = replyUci.slice(2, 4) as Square;
   const target = chess.get(to);
-  if (target && target.color !== chess.turn() && see(chess, to) >= 2) {
-    return { kind: 'wins', piece: pieceName(target.type), square: to, san };
+  if (target && target.color !== chess.turn()) {
+    const net = see(chess, to) - (justCaptured?.square === to ? justCaptured.value : 0);
+    if (net >= 2) return { kind: 'wins', piece: pieceName(target.type), square: to, san };
   }
   return null;
 }
@@ -132,7 +148,7 @@ export function commentOnUserMove(i: UserMoveInput): CoachMessage {
 
   // Nước sai: tìm lý do cụ thể
   const parts: string[] = [];
-  const threat = describeThreat(i.fenAfter, i.reply);
+  const threat = describeThreat(i.fenAfter, i.reply, capturedBy(i.fenBefore, i.uci));
   const missed = describeMissed(i.fenBefore, i.best);
 
   if (i.classification === 'miss') parts.push(`Đối thủ vừa đi sai nhưng ${i.san} chưa tận dụng được.`);

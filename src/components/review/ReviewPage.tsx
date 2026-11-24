@@ -91,7 +91,7 @@ export default function ReviewPage({
     const after = review.positions[pos]?.lines[0];
     const opp = move.color === 'w' ? 'b' : 'w';
     if (kind === 'played') {
-      const exp = explainLine(move.fenBefore, [move.uci, ...(after?.pv ?? [])], myColor, 10);
+      const exp = explainLine(move.fenBefore, [move.uci, ...(after?.pv ?? [])], myColor);
       setLine({
         kind,
         title: `Diễn biến sau ${moveNumber(move.ply)} ${move.san}`,
@@ -100,7 +100,7 @@ export default function ReviewPage({
         step: 1,
       });
     } else {
-      const exp = explainLine(move.fenBefore, before?.pv ?? [], myColor, 10);
+      const exp = explainLine(move.fenBefore, before?.pv ?? [], myColor);
       setLine({
         kind,
         title: `Nếu đi ${move.bestSan} thay vì ${move.san}`,
