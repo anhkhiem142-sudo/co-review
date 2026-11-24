@@ -1,0 +1,7 @@
+node_modules
+dist
+.vercel
+# Engine được copy tự động từ node_modules khi npm install
+public/engine
+*.log
+.DS_Store
