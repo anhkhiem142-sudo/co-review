@@ -294,6 +294,82 @@
   }
 }
 
+/* ---------- Tự luyện tập ---------- */
+.hint-card {
+  display: grid;
+  gap: 6px;
+  border-color: rgba(128, 182, 75, 0.5);
+}
+
+.hint-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hint-label {
+  font-weight: 800;
+  color: var(--win);
+}
+
+.hint-move {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 1.1rem;
+}
+
+.hint-move .eval-chip {
+  margin-left: auto;
+  font-weight: 800;
+  font-size: 0.85rem;
+  background: var(--bg-2);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+.hint-card p {
+  margin: 0;
+}
+
+.last-move {
+  border-left-width: 4px;
+}
+
+.last-move .explain-line {
+  margin-top: 6px;
+}
+
+.loader {
+  display: grid;
+  gap: 8px;
+}
+
+.loader textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.82rem;
+}
+
+.loader .btn {
+  justify-self: start;
+}
+
+@media (max-width: 560px) {
+  .tabs button {
+    padding: 6px 6px;
+    font-size: 0.8rem;
+  }
+}
+
 /* ---------- Review: "Vì sao?", so sánh, xem diễn biến ---------- */
 .why {
   margin-top: 10px;

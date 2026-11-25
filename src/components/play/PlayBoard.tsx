@@ -19,6 +19,7 @@ export default function PlayBoard({
   userColor,
   lastMove,
   hint,
+  extraArrows,
   onMove,
 }: {
   fen: string;
@@ -27,6 +28,8 @@ export default function PlayBoard({
   userColor: 'w' | 'b';
   lastMove?: { from: string; to: string; classification?: Classification };
   hint?: { square: string; uci?: string };
+  /** Mũi tên thêm (vd. gợi ý ở chế độ Tự luyện tập) */
+  extraArrows?: { startSquare: string; endSquare: string; color: string }[];
   onMove: (from: string, to: string, promotion?: string) => boolean;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
@@ -77,8 +80,11 @@ export default function PlayBoard({
   }, [lastMove, hint, selected, targets, chess]);
 
   const arrows = useMemo(
-    () => (hint?.uci ? [{ startSquare: hint.uci.slice(0, 2), endSquare: hint.uci.slice(2, 4), color: '#f2b84b' }] : []),
-    [hint],
+    () => [
+      ...(hint?.uci ? [{ startSquare: hint.uci.slice(0, 2), endSquare: hint.uci.slice(2, 4), color: '#f2b84b' }] : []),
+      ...(extraArrows ?? []),
+    ],
+    [hint, extraArrows],
   );
 
   const options = {

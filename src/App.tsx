@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import HomePage from './components/home/HomePage';
 import PlayPage from './components/play/PlayPage';
+import PracticePage from './components/practice/PracticePage';
 import ReviewPage from './components/review/ReviewPage';
 import { getEngine, type EngineInfo } from './engine/stockfishClient';
 import type { ParsedGame } from './game/parseGame';
 import { getDepth, setDepth as saveDepth, type DepthPreset } from './storage/prefs';
 
-type Tab = 'home' | 'play';
+type Tab = 'home' | 'play' | 'practice';
 type Route =
   | { name: 'home' }
   | { name: 'play' }
+  | { name: 'practice' }
   /** depth: mở Review ở độ sâu cho trước (vd. ván vừa chơi đã có sẵn kết quả ở độ sâu 12) */
   | { name: 'review'; game: ParsedGame; myColor: 'w' | 'b'; depth?: DepthPreset };
+
+const routeForTab = (tab: unknown): Route =>
+  tab === 'play' ? { name: 'play' } : tab === 'practice' ? { name: 'practice' } : { name: 'home' };
 
 export default function App() {
   const [route, setRoute] = useState<Route>({ name: 'home' });
@@ -28,7 +33,7 @@ export default function App() {
 
   // Nút Back của trình duyệt / điện thoại → quay lại tab đã mở màn hình Review
   useEffect(() => {
-    const onPop = (e: PopStateEvent) => setRoute(e.state?.tab === 'play' ? { name: 'play' } : { name: 'home' });
+    const onPop = (e: PopStateEvent) => setRoute(routeForTab(e.state?.tab));
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
@@ -41,7 +46,7 @@ export default function App() {
 
   const goTab = useCallback((tab: Tab) => {
     window.history.replaceState({ tab }, '');
-    setRoute(tab === 'play' ? { name: 'play' } : { name: 'home' });
+    setRoute(routeForTab(tab));
     window.scrollTo(0, 0);
   }, []);
 
@@ -63,11 +68,14 @@ export default function App() {
           <span className="brand">Cờ Review</span>
         </button>
         <nav className="tabs" aria-label="Chế độ">
-          <button className={route.name !== 'play' ? 'active' : ''} onClick={() => goTab('home')}>
+          <button className={route.name === 'home' || route.name === 'review' ? 'active' : ''} onClick={() => goTab('home')}>
             Xem lại ván
           </button>
           <button className={route.name === 'play' ? 'active' : ''} onClick={() => goTab('play')}>
             Đấu với máy
+          </button>
+          <button className={route.name === 'practice' ? 'active' : ''} onClick={() => goTab('practice')}>
+            Tự luyện tập
           </button>
         </nav>
         <span className="engine-status muted small" title={engine ? `${engine.name}` : undefined}>
@@ -85,6 +93,8 @@ export default function App() {
           <HomePage depth={depth} onDepthChange={changeDepth} onOpenGame={openGame} />
         ) : route.name === 'play' ? (
           <PlayPage onReview={(game, color) => openGame(game, color, 12)} />
+        ) : route.name === 'practice' ? (
+          <PracticePage />
         ) : (
           <ReviewPage
             key={route.game.id}
