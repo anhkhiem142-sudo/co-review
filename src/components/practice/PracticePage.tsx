@@ -9,6 +9,8 @@ import PlayBoard from '../play/PlayBoard';
 import EvalBar from '../review/EvalBar';
 import MoveList from '../review/MoveList';
 
+const FLIP_KEY = 'co-review:practice-flip';
+
 /** "Mã g1 → f3" */
 function describeMove(fen: string, uci: string): { text: string; san?: string } {
   const chess = new Chess(fen);
@@ -34,7 +36,23 @@ function statusText(fen: string): string | null {
 
 export default function PracticePage() {
   const p = usePractice();
-  const [flipped, setFlipped] = useState(false);
+  // Bàn cờ KHÔNG tự xoay theo lượt đi — chỉ xoay khi bấm nút. Nhớ lựa chọn giữa các lần mở.
+  const [flipped, setFlippedState] = useState(() => {
+    try {
+      return localStorage.getItem(FLIP_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleFlip = () =>
+    setFlippedState((f) => {
+      try {
+        localStorage.setItem(FLIP_KEY, f ? '0' : '1');
+      } catch {
+        /* bỏ qua */
+      }
+      return !f;
+    });
   const [loader, setLoader] = useState(false);
   const [loadText, setLoadText] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -89,7 +107,7 @@ export default function PracticePage() {
         <div className="board-panel">
           <div className="player-bar">
             <span className="muted small">
-              Lượt đi: <b>{turn === 'w' ? 'Trắng' : 'Đen'}</b> — bạn điều khiển cả hai màu
+              Lượt đi: <b>{turn === 'w' ? 'Trắng' : 'Đen'}</b> — bạn điều khiển cả hai màu · {flipped ? 'Đen' : 'Trắng'} ở dưới
             </span>
           </div>
           <div className="board-row" style={p.showHints ? undefined : { gridTemplateColumns: '0 minmax(0,1fr)' }}>
@@ -130,8 +148,8 @@ export default function PracticePage() {
             >
               Gợi ý: {p.showHints ? 'Bật' : 'Tắt'}
             </button>
-            <button className="btn ghost" onClick={() => setFlipped((f) => !f)} aria-label="Xoay bàn cờ" title="Xoay bàn cờ">
-              ⇅
+            <button className="btn ghost" onClick={toggleFlip} title="Đổi bên ở dưới bàn cờ (bàn cờ không tự xoay)">
+              ⇅ Xoay bàn cờ
             </button>
           </div>
         </div>
